@@ -1,0 +1,26 @@
+# Dependencies & JS build outputs
+node_modules/
+dist/
+dist-test/
+
+# Rust / Tauri build outputs
+src-tauri/target/
+src-tauri/gen/schemas/
+
+# Local app state, databases & secrets
+.oro/
+*.db
+*.db-wal
+*.db-shm
+.env
+.env.*
+
+# Logs, temp & OS files
+*.log
+err.txt
+.trash/
+5824/
+my-brain/
+Oro.exe
+.DS_Store
+Thumbs.db
