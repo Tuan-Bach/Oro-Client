@@ -7,6 +7,7 @@ import {
   File,
   FileJson,
   Image as ImageIcon,
+  Film,
   Search,
   Plus,
   RefreshCw,
@@ -59,19 +60,34 @@ interface SidebarDrawerProps {
 
 function getFileIcon(ext: string) {
   const e = ext.toLowerCase();
-  if (e === "md" || e === "markdown" || e === "txt") {
+  if (e === "md" || e === "markdown") {
+    return <FileText size={12.5} style={{ color: "#60a5fa", flexShrink: 0, opacity: 0.9 }} />;
+  }
+  if (e === "txt") {
     return <FileText size={12.5} style={{ color: "var(--text-muted)", flexShrink: 0, opacity: 0.85 }} />;
   }
-  if (["ts", "tsx", "js", "jsx", "py", "sh", "bat", "ps1", "bash", "css", "html"].includes(e)) {
-    return <FileCode size={12.5} style={{ color: "var(--text-subtle)", flexShrink: 0, opacity: 0.7 }} />;
+  if (e === "py") {
+    return <FileCode size={12.5} style={{ color: "#eab308", flexShrink: 0, opacity: 0.9 }} />;
   }
-  if (e === "json") {
-    return <FileJson size={12.5} style={{ color: "var(--text-subtle)", flexShrink: 0, opacity: 0.7 }} />;
+  if (e === "rs") {
+    return <FileCode size={12.5} style={{ color: "#f97316", flexShrink: 0, opacity: 0.9 }} />;
   }
-  if (["png", "jpg", "jpeg", "svg", "gif", "webp", "ico"].includes(e)) {
-    return <ImageIcon size={12.5} style={{ color: "var(--text-subtle)", flexShrink: 0, opacity: 0.7 }} />;
+  if (["ts", "tsx", "js", "jsx"].includes(e)) {
+    return <FileCode size={12.5} style={{ color: "#38bdf8", flexShrink: 0, opacity: 0.9 }} />;
   }
-  return <File size={12.5} style={{ color: "var(--text-subtle)", flexShrink: 0, opacity: 0.6 }} />;
+  if (["sh", "bat", "ps1", "bash", "css", "html"].includes(e)) {
+    return <FileCode size={12.5} style={{ color: "#a78bfa", flexShrink: 0, opacity: 0.85 }} />;
+  }
+  if (["json", "toml", "yaml", "yml"].includes(e)) {
+    return <FileJson size={12.5} style={{ color: "#34d399", flexShrink: 0, opacity: 0.9 }} />;
+  }
+  if (["png", "jpg", "jpeg", "svg", "gif", "webp", "ico", "bmp"].includes(e)) {
+    return <ImageIcon size={12.5} style={{ color: "#c084fc", flexShrink: 0, opacity: 0.9 }} />;
+  }
+  if (["mp4", "webm", "mov"].includes(e)) {
+    return <Film size={12.5} style={{ color: "#fb7185", flexShrink: 0, opacity: 0.9 }} />;
+  }
+  return <File size={12.5} style={{ color: "var(--text-subtle)", flexShrink: 0, opacity: 0.65 }} />;
 }
 
 export const SidebarDrawer: React.FC<SidebarDrawerProps> = ({
