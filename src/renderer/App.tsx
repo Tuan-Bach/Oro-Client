@@ -11,6 +11,8 @@ import { SplitResizer } from "./components/SplitResizer.js";
 import { QuickSwitcherModal } from "./components/QuickSwitcherModal.js";
 import { SplashScreen } from "./components/SplashScreen.js";
 import { AppDialogHost, appAlert } from "./components/AppDialog.js";
+import { ToastHost, showToast } from "./components/Toast.js";
+import { isBinaryMediaPath } from "./components/MediaViewer.js";
 import { recordUsage } from "./utils/usageTracker.js";
 import type {
   AgentModeId,
@@ -458,7 +460,9 @@ export const App: React.FC = () => {
     }
 
     try {
-      const fileData = await window.oro.readFile(relPath);
+      const fileData = isBinaryMediaPath(relPath)
+        ? { path: relPath, content: "", totalLines: 0 }
+        : await window.oro.readFile(relPath);
       const newTab: OpenTab = {
         path: fileData.path,
         title: fileData.path.split("/").pop() || fileData.path,
@@ -499,7 +503,9 @@ export const App: React.FC = () => {
     }
 
     try {
-      const fileData = await window.oro.readFile(relPath);
+      const fileData = isBinaryMediaPath(relPath)
+        ? { path: relPath, content: "", totalLines: 0 }
+        : await window.oro.readFile(relPath);
       const newTab: OpenTab = {
         path: fileData.path,
         title: fileData.path.split("/").pop() || fileData.path,
@@ -615,6 +621,7 @@ export const App: React.FC = () => {
       setTabs((prev) =>
         prev.map((t) => (t.path === path ? { ...t, originalContent: tab.content, isDirty: false } : t))
       );
+      showToast(`Saved ${path.split("/").pop() || path}`, "success", 2000);
       const treeData = await window.oro.getTree();
       setTree(treeData);
       if (activeSession) {
@@ -931,6 +938,9 @@ export const App: React.FC = () => {
       }
 
       const res = await window.oro.rollbackSnapshot(snapshotId);
+      if (res) {
+        showToast("Reverted changes", "info", 2200);
+      }
       if (res.success) {
         // Instant optimistic UI update: remove messages immediately (0ms delay)
         if (idsToDelete.length > 0) {
@@ -1609,6 +1619,7 @@ export const App: React.FC = () => {
       )}
 
       <AppDialogHost />
+      <ToastHost />
 
       {activeModal === "new_file" && (
         <PromptModal

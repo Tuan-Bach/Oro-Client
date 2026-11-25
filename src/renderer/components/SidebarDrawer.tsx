@@ -113,6 +113,43 @@ export const SidebarDrawer: React.FC<SidebarDrawerProps> = ({
   const [expanded, setExpanded] = useState<Set<string>>(
     new Set(["Notes", "Research", "Projects", "Concepts", "Inbox", "Sessions", "src"])
   );
+  const [treeFilter, setTreeFilter] = useState("");
+
+  // Press F2 to quickly rename the active file in the sidebar
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key !== "F2" || !activeFilePath) return;
+      const tag = (e.target as HTMLElement)?.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA" || (e.target as HTMLElement)?.isContentEditable) return;
+      e.preventDefault();
+      setPromptState({
+        type: "rename",
+        targetPath: activeFilePath,
+        initialValue: activeFilePath.split("/").pop() || activeFilePath,
+      });
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [activeFilePath]);
+
+  const filterTreeNodes = (nodes: TreeNode[], q: string): TreeNode[] => {
+    const term = q.trim().toLowerCase();
+    if (!term) return nodes;
+    const out: TreeNode[] = [];
+    for (const n of nodes) {
+      if (n.isDir) {
+        const filteredChildren = n.children ? filterTreeNodes(n.children, term) : [];
+        if (n.name.toLowerCase().includes(term) || filteredChildren.length > 0) {
+          out.push({ ...n, children: filteredChildren });
+        }
+      } else if (n.name.toLowerCase().includes(term) || n.path.toLowerCase().includes(term)) {
+        out.push(n);
+      }
+    }
+    return out;
+  };
+
+  const displayedTree = treeFilter.trim() ? filterTreeNodes(tree, treeFilter) : tree;
   const [isSidebarDraggingOver, setIsSidebarDraggingOver] = useState(false);
   const [isInternalDragging, setIsInternalDragging] = useState(false);
   const [dragHoverFolder, setDragHoverFolder] = useState<string | null>(null);
@@ -923,7 +960,36 @@ export const SidebarDrawer: React.FC<SidebarDrawerProps> = ({
             </div>
           </div>
         ) : (
-          renderTreeNodes(tree)
+          <>
+            <div className="sidebar-filter-wrap">
+              <Search size={11} className="sidebar-filter-icon" />
+              <input
+                type="text"
+                className="sidebar-filter-input"
+                placeholder="Filter files..."
+                value={treeFilter}
+                onChange={(e) => setTreeFilter(e.target.value)}
+                aria-label="Filter workspace files"
+              />
+              {treeFilter && (
+                <button
+                  type="button"
+                  className="sidebar-filter-clear"
+                  onClick={() => setTreeFilter("")}
+                  aria-label="Clear filter"
+                >
+                  <X size={11} />
+                </button>
+              )}
+            </div>
+            {displayedTree.length === 0 ? (
+              <div style={{ padding: "16px 12px", fontSize: 11.5, color: "var(--text-subtle)", textAlign: "center" }}>
+                No matching files
+              </div>
+            ) : (
+              renderTreeNodes(displayedTree)
+            )}
+          </>
         )}
       </div>
 

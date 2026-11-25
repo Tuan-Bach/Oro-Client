@@ -961,3 +961,57 @@ pub fn get_recent_workspaces() -> Result<Vec<serde_json::Value>, String> {
     }
 }
 
+fn encode_base64(bytes: &[u8]) -> String {
+    const TABLE: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut out = String::with_capacity(bytes.len().div_ceil(3) * 4);
+    for chunk in bytes.chunks(3) {
+        let b0 = chunk[0] as u32;
+        let b1 = if chunk.len() > 1 { chunk[1] as u32 } else { 0 };
+        let b2 = if chunk.len() > 2 { chunk[2] as u32 } else { 0 };
+        let n = (b0 << 16) | (b1 << 8) | b2;
+        out.push(TABLE[((n >> 18) & 0x3F) as usize] as char);
+        out.push(TABLE[((n >> 12) & 0x3F) as usize] as char);
+        if chunk.len() > 1 {
+            out.push(TABLE[((n >> 6) & 0x3F) as usize] as char);
+        } else {
+            out.push('=');
+        }
+        if chunk.len() > 2 {
+            out.push(TABLE[(n & 0x3F) as usize] as char);
+        } else {
+            out.push('=');
+        }
+    }
+    out
+}
+
+#[tauri::command]
+pub fn read_media_data_url(path: String, state: State<'_, AppState>) -> Result<String, String> {
+    let root = state.workspace_root.lock().map_err(|e| e.to_string())?.clone();
+    let abs = VaultFs::resolve_safe_path(&root, &path).map_err(|e| e.to_string())?;
+    let meta = std::fs::metadata(&abs).map_err(|e| format!("Cannot read file metadata: {}", e))?;
+    if meta.len() > 35 * 1024 * 1024 {
+        return Err("Media file is too large to preview inline (>35 MB).".to_string());
+    }
+    let bytes = std::fs::read(&abs).map_err(|e| format!("Cannot read media file: {}", e))?;
+    let ext = abs
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("")
+        .to_lowercase();
+    let mime = match ext.as_str() {
+        "png" => "image/png",
+        "jpg" | "jpeg" => "image/jpeg",
+        "gif" => "image/gif",
+        "webp" => "image/webp",
+        "svg" => "image/svg+xml",
+        "bmp" => "image/bmp",
+        "ico" => "image/x-icon",
+        "mp4" => "video/mp4",
+        "webm" => "video/webm",
+        "mov" => "video/quicktime",
+        _ => "application/octet-stream",
+    };
+    Ok(format!("data:{};base64,{}", mime, encode_base64(&bytes)))
+}
+

@@ -136,6 +136,7 @@ pub fn run() {
             commands::set_workspace_root,
             commands::get_tree,
             commands::read_file,
+            commands::read_media_data_url,
             commands::write_file,
             commands::delete_path,
             commands::move_path,

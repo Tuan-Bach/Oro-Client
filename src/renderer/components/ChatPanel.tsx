@@ -32,6 +32,7 @@ import {
   FolderPlus,
   Loader2,
   AlertCircle,
+  ArrowDown,
 } from "lucide-react";
 import { marked } from "marked";
 import type { AgentModeId, OroConfig, ProviderId, SessionFileRecord, SessionRecord, ToolCallEvent, SubagentProgressEvent } from "../../types.js";
@@ -725,11 +726,45 @@ export const ChatPanel: React.FC<ChatPanelProps> = React.memo(({
     return () => window.removeEventListener("mousedown", handleClickOutside);
   }, [modelMenuOpen, modeMenuOpen]);
 
+  const [showScrollBottom, setShowScrollBottom] = useState(false);
+  const [lightboxImg, setLightboxImg] = useState<{ name: string; src: string } | null>(null);
+  const [streamElapsedSec, setStreamElapsedSec] = useState(0);
+
+  useEffect(() => {
+    if (!isStreaming) {
+      setStreamElapsedSec(0);
+      return;
+    }
+    const started = Date.now();
+    const id = window.setInterval(() => {
+      setStreamElapsedSec(Math.floor((Date.now() - started) / 1000));
+    }, 1000);
+    return () => window.clearInterval(id);
+  }, [isStreaming]);
+
+  useEffect(() => {
+    if (!lightboxImg) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setLightboxImg(null);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [lightboxImg]);
+
   // Auto-scroll on new messages or stream chunks (only when user is pinned to bottom)
   const handleChatScroll = () => {
     if (!scrollRef.current) return;
     const { scrollTop, scrollHeight, clientHeight } = scrollRef.current;
-    isAtBottomRef.current = scrollHeight - scrollTop - clientHeight < 80;
+    const atBottom = scrollHeight - scrollTop - clientHeight < 80;
+    isAtBottomRef.current = atBottom;
+    setShowScrollBottom(!atBottom && scrollHeight > clientHeight + 120);
+  };
+
+  const scrollToBottom = () => {
+    if (!scrollRef.current) return;
+    isAtBottomRef.current = true;
+    setShowScrollBottom(false);
+    scrollRef.current.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
   };
 
   useEffect(() => {
@@ -1673,7 +1708,24 @@ export const ChatPanel: React.FC<ChatPanelProps> = React.memo(({
       </div>
 
       {/* Floating Prompt Area Island */}
-      <div className="floating-prompt-wrapper" style={{ padding: "0 24px 12px 24px" }}>
+      <div className="floating-prompt-wrapper" style={{ padding: "0 24px 12px 24px", position: "relative" }}>
+        {showScrollBottom && (
+          <button
+            type="button"
+            className="scroll-to-bottom-btn no-drag"
+            onClick={scrollToBottom}
+            title="Jump to latest message"
+            aria-label="Jump to latest message"
+          >
+            <ArrowDown size={14} />
+          </button>
+        )}
+        {isStreaming && streamElapsedSec >= 2 && (
+          <div className="stream-elapsed-pill" aria-live="polite">
+            <span className="stream-pulse-dot" />
+            <span>Working · {streamElapsedSec}s</span>
+          </div>
+        )}
         <form
           onSubmit={handleSubmit}
           className="floating-prompt-box"
@@ -1716,14 +1768,49 @@ export const ChatPanel: React.FC<ChatPanelProps> = React.memo(({
                     maxWidth: 240,
                   }}
                 >
-                  {f.isImage ? (
-                    <ImageIcon size={11} style={{ color: "var(--cyan)", flexShrink: 0 }} />
+                  {f.isImage && f.base64 ? (
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setLightboxImg({
+                          name: f.name,
+                          src: `data:${f.type || "image/png"};base64,${f.base64}`,
+                        })
+                      }
+                      title="Preview image"
+                      style={{
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: 5,
+                        background: "transparent",
+                        border: "none",
+                        padding: 0,
+                        color: "inherit",
+                        cursor: "pointer",
+                        minWidth: 0,
+                      }}
+                    >
+                      <img
+                        src={`data:${f.type || "image/png"};base64,${f.base64}`}
+                        alt={f.name}
+                        style={{ width: 16, height: 16, borderRadius: 3, objectFit: "cover", flexShrink: 0 }}
+                      />
+                      <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        {f.name}
+                      </span>
+                    </button>
                   ) : (
-                    <FileText size={11} style={{ color: "var(--cyan)", flexShrink: 0 }} />
+                    <>
+                      {f.isImage ? (
+                        <ImageIcon size={11} style={{ color: "var(--cyan)", flexShrink: 0 }} />
+                      ) : (
+                        <FileText size={11} style={{ color: "var(--cyan)", flexShrink: 0 }} />
+                      )}
+                      <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        {f.name}
+                      </span>
+                    </>
                   )}
-                  <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                    {f.name}
-                  </span>
                   <span style={{ fontSize: 9.5, color: "var(--text-subtle)", flexShrink: 0 }}>
                     ({formatFileSize(f.size)})
                   </span>
@@ -2190,6 +2277,44 @@ export const ChatPanel: React.FC<ChatPanelProps> = React.memo(({
           </div>
         </form>
       </div>
+
+      {/* Screenshot Lightbox Preview */}
+      {lightboxImg && (
+        <div
+          className="modal-overlay"
+          style={{ zIndex: 10040, backdropFilter: "blur(6px)" }}
+          onClick={() => setLightboxImg(null)}
+          role="dialog"
+          aria-modal="true"
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              maxWidth: "88vw",
+              maxHeight: "88vh",
+              display: "flex",
+              flexDirection: "column",
+              alignItems: "center",
+              gap: 10,
+            }}
+          >
+            <img
+              src={lightboxImg.src}
+              alt={lightboxImg.name}
+              style={{
+                maxWidth: "85vw",
+                maxHeight: "80vh",
+                borderRadius: 10,
+                boxShadow: "0 4px 16px rgba(0,0,0,0.35), 0 18px 48px rgba(0,0,0,0.5)",
+                border: "1px solid var(--border)",
+              }}
+            />
+            <span style={{ fontSize: 12, color: "var(--text-secondary)" }}>
+              {lightboxImg.name} — Click anywhere or press Esc to close
+            </span>
+          </div>
+        </div>
+      )}
     </div>
   );
 });

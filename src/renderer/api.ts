@@ -148,6 +148,11 @@ export function createOroApiClient(baseUrl: string = window.location.origin): Or
       return apiGet<{ path: string; content: string; totalLines: number }>("/api/file", { path: relPath });
     },
 
+    readMediaDataUrl: (relPath: string) => {
+      if (isTauri) return tauriInvoke<string>("read_media_data_url", { path: relPath });
+      return Promise.reject(new Error("Media preview requires desktop runtime"));
+    },
+
     writeFile: (relPath: string, content: string, encoding?: "utf8" | "base64") => {
       if (isTauri) return tauriInvoke<{ path: string; action: string; bytes: number }>("write_file", { path: relPath, content });
       return apiPost<{ path: string; action: string; bytes: number }>("/api/file", { path: relPath, content, encoding });

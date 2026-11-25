@@ -72,6 +72,7 @@ export interface OroDesktopApi {
 
   getTree: (subPath?: string) => Promise<TreeNode[]>;
   readFile: (relPath: string) => Promise<{ path: string; content: string; totalLines: number }>;
+  readMediaDataUrl: (relPath: string) => Promise<string>;
   writeFile: (relPath: string, content: string, encoding?: "utf8" | "base64") => Promise<{ path: string; action: string; bytes: number }>;
   deletePath: (relPath: string) => Promise<{ path: string; trashPath: string }>;
   movePath: (from: string, to: string) => Promise<{ from: string; to: string; updatedLinksIn: string[] }>;

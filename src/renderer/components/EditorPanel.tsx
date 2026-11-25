@@ -30,6 +30,7 @@ import { marked } from "marked";
 import type { BacklinkInfo, NoteLinkRecord, EditorPreferences, TreeNode } from "../../types.js";
 import { SplitResizer } from "./SplitResizer.js";
 import { ContextMenu, type ContextMenuItem } from "./ContextMenu.js";
+import { MediaViewer, getMediaKind } from "./MediaViewer.js";
 import { processDroppedFiles } from "../utils/fileDropHelper.js";
 
 // React 19 JSX compatibility cast
@@ -1334,6 +1335,10 @@ export const EditorPanel: React.FC<EditorPanelProps> = ({
 
       {/* Editor Main Content Area */}
       <div style={{ flex: 1, display: "flex", minWidth: 0, overflow: "hidden" }}>
+        {getMediaKind(activeTab.path) ? (
+          <MediaViewer relPath={activeTab.path} onOpenExternal={onOpenExternal} />
+        ) : (
+        <>
         {/* Monaco Editor Pane */}
         {(effectiveViewMode === "editor" || effectiveViewMode === "split") && (
           <div
@@ -1623,6 +1628,8 @@ export const EditorPanel: React.FC<EditorPanelProps> = ({
               }}
             />
           </div>
+        )}
+        </>
         )}
       </div>
 
