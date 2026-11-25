@@ -836,37 +836,11 @@ pub fn window_control(action: String, window: tauri::Window) -> Result<(), Strin
 
 #[tauri::command]
 pub async fn select_workspace_folder() -> Result<Option<String>, String> {
-    #[cfg(target_os = "windows")]
-    {
-        tokio::task::spawn_blocking(|| {
-            use std::os::windows::process::CommandExt;
-            const CREATE_NO_WINDOW: u32 = 0x08000000;
-            let output = std::process::Command::new("powershell")
-                .creation_flags(CREATE_NO_WINDOW)
-                .arg("-NoProfile")
-                .arg("-NonInteractive")
-                .arg("-WindowStyle")
-                .arg("Hidden")
-                .arg("-STA")
-                .arg("-Command")
-                .arg(r#"Add-Type -AssemblyName System.Windows.Forms; $d = New-Object System.Windows.Forms.FolderBrowserDialog; $d.Description = 'Select Workspace Folder'; $d.ShowNewFolderButton = $true; $d.AutoUpgradeEnabled = $true; $top = New-Object System.Windows.Forms.Form; $top.TopMost = $true; if ($d.ShowDialog($top) -eq [System.Windows.Forms.DialogResult]::OK) { Write-Output $d.SelectedPath }"#)
-                .output()
-                .map_err(|e| e.to_string())?;
-
-            let res = String::from_utf8_lossy(&output.stdout).trim().to_string();
-            if res.is_empty() {
-                Ok(None)
-            } else {
-                Ok(Some(res))
-            }
-        })
-        .await
-        .map_err(|e| e.to_string())?
-    }
-    #[cfg(not(target_os = "windows"))]
-    {
-        Ok(None)
-    }
+    let picked = rfd::AsyncFileDialog::new()
+        .set_title("Select Workspace Folder")
+        .pick_folder()
+        .await;
+    Ok(picked.map(|handle| handle.path().to_string_lossy().to_string()))
 }
 
 #[tauri::command]
