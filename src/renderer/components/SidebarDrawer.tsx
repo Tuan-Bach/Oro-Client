@@ -27,6 +27,7 @@ import type { TaskRecord, MemoryRecord, TreeNode } from "../../types.js";
 import type { WorkspaceSummary } from "../../ipc-types.js";
 import { ContextMenu, type ContextMenuItem } from "./ContextMenu.js";
 import { PromptModal } from "./PromptModal.js";
+import { appConfirm } from "./AppDialog.js";
 import { processDroppedDataTransfer } from "../utils/fileDropHelper.js";
 
 interface SidebarDrawerProps {
@@ -239,7 +240,12 @@ export const SidebarDrawer: React.FC<SidebarDrawerProps> = ({
       return check(n);
     });
     const label = isDir ? "folder" : "file";
-    const ok = window.confirm(`Move "${relPath}" to trash?`);
+    const ok = await appConfirm({
+      title: `Move ${label} to trash`,
+      message: `Move "${relPath}" to trash?`,
+      confirmLabel: "Move to Trash",
+      destructive: true,
+    });
     if (!ok) return;
     try {
       if (onDeletePath) {

@@ -27,6 +27,7 @@ import type { AgentModeId, OroConfig, SessionRecord } from "../../types.js";
 import type { WorkspaceSummary } from "../../ipc-types.js";
 import { ContextMenu } from "./ContextMenu.js";
 import { WorkspaceDropdown } from "./WorkspaceDropdown.js";
+import { appPrompt } from "./AppDialog.js";
 
 interface TitleBarProps {
   workspace: WorkspaceSummary | null;
@@ -615,8 +616,13 @@ export const TitleBar: React.FC<TitleBarProps> = ({
                     id: "rename_session",
                     label: "Rename Session",
                     icon: <Edit3 size={14} />,
-                    onClick: () => {
-                      const newTitle = window.prompt("Rename Session:", session.title);
+                    onClick: async () => {
+                      const newTitle = await appPrompt({
+                        title: "Rename Session",
+                        defaultValue: session.title,
+                        placeholder: "Session title...",
+                        confirmLabel: "Rename",
+                      });
                       if (newTitle && newTitle.trim()) {
                         onRenameSession(session.id, newTitle.trim());
                       }

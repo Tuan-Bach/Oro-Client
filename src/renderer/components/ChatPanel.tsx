@@ -37,6 +37,7 @@ import { marked } from "marked";
 import type { AgentModeId, OroConfig, ProviderId, SessionFileRecord, SessionRecord, ToolCallEvent, SubagentProgressEvent } from "../../types.js";
 import { processDroppedFiles, processDroppedDataTransfer, formatFileSize, type DroppedFileInfo } from "../utils/fileDropHelper.js";
 import { ContextMenu } from "./ContextMenu.js";
+import { appPrompt } from "./AppDialog.js";
 
 const PROVIDER_MODELS: Record<
   ProviderId,
@@ -1224,8 +1225,13 @@ export const ChatPanel: React.FC<ChatPanelProps> = React.memo(({
                     id: "rename",
                     label: "Rename",
                     icon: <Edit3 size={13} />,
-                    onClick: () => {
-                      const newTitle = window.prompt("Rename Session:", activeSession.title);
+                    onClick: async () => {
+                      const newTitle = await appPrompt({
+                        title: "Rename Session",
+                        defaultValue: activeSession.title,
+                        placeholder: "Session title...",
+                        confirmLabel: "Rename",
+                      });
                       if (newTitle && newTitle.trim()) {
                         onRenameSession(activeSession.id, newTitle.trim());
                       }

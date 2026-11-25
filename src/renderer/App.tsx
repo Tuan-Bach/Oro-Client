@@ -10,6 +10,7 @@ import { PromptModal } from "./components/PromptModal.js";
 import { SplitResizer } from "./components/SplitResizer.js";
 import { QuickSwitcherModal } from "./components/QuickSwitcherModal.js";
 import { SplashScreen } from "./components/SplashScreen.js";
+import { AppDialogHost, appAlert } from "./components/AppDialog.js";
 import { recordUsage } from "./utils/usageTracker.js";
 import type {
   AgentModeId,
@@ -1159,7 +1160,10 @@ export const App: React.FC = () => {
       await handleOpenFile(clean);
     } catch (err) {
       console.error("New note error:", err);
-      alert(`Could not create note: ${err instanceof Error ? err.message : String(err)}`);
+      void appAlert({
+        title: "Could Not Create Note",
+        message: err instanceof Error ? err.message : String(err),
+      });
     }
   };
 
@@ -1172,7 +1176,10 @@ export const App: React.FC = () => {
       setTree(treeData);
     } catch (err) {
       console.error("New folder error:", err);
-      alert(`Could not create folder: ${err instanceof Error ? err.message : String(err)}`);
+      void appAlert({
+        title: "Could Not Create Folder",
+        message: err instanceof Error ? err.message : String(err),
+      });
     }
   };
 
@@ -1224,7 +1231,10 @@ export const App: React.FC = () => {
       await reloadWorkspace();
     } catch (err) {
       console.error("Failed to switch workspace:", err);
-      alert(`Could not switch workspace: ${err instanceof Error ? err.message : String(err)}`);
+      void appAlert({
+        title: "Could Not Switch Workspace",
+        message: err instanceof Error ? err.message : String(err),
+      });
     }
   };
 
@@ -1597,6 +1607,8 @@ export const App: React.FC = () => {
           onSwitchWorkspace={handleSwitchWorkspace}
         />
       )}
+
+      <AppDialogHost />
 
       {activeModal === "new_file" && (
         <PromptModal

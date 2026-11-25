@@ -213,6 +213,19 @@ pub fn get_agent_tools() -> Vec<ToolDefinition> {
                 "required": ["prompt"]
             }),
         },
+        ToolDefinition {
+            name: "generate_video".to_string(),
+            description: "Generate a short MP4 video from a text prompt using Gemini Veo (long-running operation) and save it into the workspace.".to_string(),
+            parameters: json!({
+                "type": "object",
+                "properties": {
+                    "prompt": { "type": "string", "description": "Detailed visual description of the video to generate" },
+                    "output_path": { "type": "string", "description": "Relative path to save the MP4 video (e.g. 'assets/demo.mp4')" },
+                    "aspect_ratio": { "type": "string", "description": "Optional aspect ratio: '16:9' (default) or '9:16'" }
+                },
+                "required": ["prompt"]
+            }),
+        },
     ]
 }
 
@@ -841,6 +854,158 @@ impl<'a> ToolExecutor<'a> {
                         ok: false,
                         output: e,
                         summary: "Image generation failed".to_string(),
+                    },
+                }
+            }
+            "generate_video" => {
+                let prompt = args["prompt"].as_str().unwrap_or("");
+                if prompt.is_empty() {
+                    return ToolExecutionResult {
+                        ok: false,
+                        output: "Missing 'prompt' argument".to_string(),
+                        summary: "Missing prompt".to_string(),
+                    };
+                }
+                let out_rel = args["output_path"]
+                    .as_str()
+                    .filter(|s| !s.is_empty())
+                    .unwrap_or("generated_video.mp4");
+                let aspect_ratio = args["aspect_ratio"]
+                    .as_str()
+                    .filter(|s| *s == "16:9" || *s == "9:16")
+                    .unwrap_or("16:9")
+                    .to_string();
+
+                let out_abs = match VaultFs::resolve_safe_path(self.workspace_root, out_rel) {
+                    Ok(p) => p,
+                    Err(e) => {
+                        return ToolExecutionResult {
+                            ok: false,
+                            output: format!("Invalid output_path: {}", e),
+                            summary: "Invalid path".to_string(),
+                        };
+                    }
+                };
+                if let Some(parent) = out_abs.parent() {
+                    let _ = std::fs::create_dir_all(parent);
+                }
+
+                let home = std::env::var("USERPROFILE").or_else(|_| std::env::var("HOME")).unwrap_or_else(|_| ".".to_string());
+                let cfg_path = std::path::PathBuf::from(home).join(".oro").join("config.json");
+                let api_key = std::fs::read_to_string(&cfg_path)
+                    .ok()
+                    .and_then(|c| serde_json::from_str::<Value>(&c).ok())
+                    .and_then(|v| v["providers"]["gemini"]["apiKey"].as_str().map(|s| s.to_string()))
+                    .or_else(|| std::env::var("GEMINI_API_KEY").ok())
+                    .unwrap_or_default();
+
+                if api_key.is_empty() {
+                    return ToolExecutionResult {
+                        ok: false,
+                        output: "Gemini API key not configured in ~/.oro/config.json".to_string(),
+                        summary: "Missing API key".to_string(),
+                    };
+                }
+
+                let prompt_owned = prompt.to_string();
+                let res = std::thread::spawn(move || -> Result<Vec<u8>, String> {
+                    let rt = tokio::runtime::Runtime::new().map_err(|e| e.to_string())?;
+                    rt.block_on(async move {
+                        let start_url = format!(
+                            "https://generativelanguage.googleapis.com/v1beta/models/veo-2.0-generate-001:predictLongRunning?key={}",
+                            api_key
+                        );
+                        let body = json!({
+                            "instances": [{ "prompt": prompt_owned }],
+                            "parameters": {
+                                "aspectRatio": aspect_ratio,
+                                "personGeneration": "allow_adult"
+                            }
+                        });
+                        let client = reqwest::Client::new();
+                        let resp = client.post(&start_url).json(&body).send().await.map_err(|e| e.to_string())?;
+                        if !resp.status().is_success() {
+                            let status = resp.status();
+                            let err = resp.text().await.unwrap_or_default();
+                            return Err(format!("Video API error ({}): {}", status, &err[..err.len().min(300)]));
+                        }
+                        let start_val: Value = resp.json().await.map_err(|e| e.to_string())?;
+                        let op_name = start_val["name"]
+                            .as_str()
+                            .ok_or_else(|| "Video API did not return an operation name".to_string())?
+                            .to_string();
+
+                        // Poll operation every 5s up to 180s
+                        let poll_url = format!(
+                            "https://generativelanguage.googleapis.com/v1beta/{}?key={}",
+                            op_name.trim_start_matches('/'),
+                            api_key
+                        );
+                        let mut completed_val: Option<Value> = None;
+                        for _ in 0..36 {
+                            tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+                            let poll_resp = client.get(&poll_url).send().await.map_err(|e| e.to_string())?;
+                            if !poll_resp.status().is_success() {
+                                let status = poll_resp.status();
+                                let err = poll_resp.text().await.unwrap_or_default();
+                                return Err(format!("Video poll error ({}): {}", status, &err[..err.len().min(300)]));
+                            }
+                            let val: Value = poll_resp.json().await.map_err(|e| e.to_string())?;
+                            if val["done"].as_bool().unwrap_or(false) {
+                                if let Some(err_obj) = val.get("error") {
+                                    return Err(format!("Video generation failed: {}", err_obj));
+                                }
+                                completed_val = Some(val);
+                                break;
+                            }
+                        }
+
+                        let done_val = completed_val
+                            .ok_or_else(|| "Video generation timed out after 180 seconds".to_string())?;
+                        let video_uri = done_val["response"]["generateVideoResponse"]["generatedSamples"][0]["video"]["uri"]
+                            .as_str()
+                            .ok_or_else(|| "No video URI returned by Veo".to_string())?;
+
+                        let download_url = if video_uri.contains("key=") {
+                            video_uri.to_string()
+                        } else if video_uri.contains('?') {
+                            format!("{}&key={}", video_uri, api_key)
+                        } else {
+                            format!("{}?key={}", video_uri, api_key)
+                        };
+
+                        let dl_resp = client.get(&download_url).send().await.map_err(|e| e.to_string())?;
+                        if !dl_resp.status().is_success() {
+                            let status = dl_resp.status();
+                            return Err(format!("Failed to download generated video ({})", status));
+                        }
+                        let bytes = dl_resp.bytes().await.map_err(|e| e.to_string())?;
+                        Ok(bytes.to_vec())
+                    })
+                })
+                .join()
+                .map_err(|_| "Video generation thread panicked".to_string())
+                .and_then(|r| r);
+
+                match res {
+                    Ok(bytes) => {
+                        if let Err(e) = std::fs::write(&out_abs, &bytes) {
+                            return ToolExecutionResult {
+                                ok: false,
+                                output: format!("Failed to save video: {}", e),
+                                summary: "Save failed".to_string(),
+                            };
+                        }
+                        ToolExecutionResult {
+                            ok: true,
+                            output: format!("Successfully generated video at {} ({} bytes).", out_rel, bytes.len()),
+                            summary: format!("Generated {}", out_rel),
+                        }
+                    }
+                    Err(e) => ToolExecutionResult {
+                        ok: false,
+                        output: e,
+                        summary: "Video generation failed".to_string(),
                     },
                 }
             }

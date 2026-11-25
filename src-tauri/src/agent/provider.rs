@@ -260,69 +260,56 @@ impl LlmClient {
             body["generationConfig"] = json!({ "thinkingConfig": { "thinkingBudget": 0 } });
         }
 
-        // Retry on 503/429 and fall back to lite models if primary model is overloaded
-        let mut models_to_try = vec![cfg.model.clone()];
-        for fallback in ["gemini-flash-lite-latest", "gemini-3.5-flash-lite"] {
-            if cfg.model != fallback {
-                models_to_try.push(fallback.to_string());
-            }
-        }
+        // Strict model selection: retry once on transient 503/timeout for the exact selected model, never silently switch models
+        let attempt_url = format!(
+            "{}/models/{}:streamGenerateContent?alt=sse&key={}",
+            base_url, cfg.model, api_key
+        );
 
         let mut final_resp = None;
         let mut last_err = String::new();
 
-        'outer: for model_name in &models_to_try {
-            let attempt_url = format!(
-                "{}/models/{}:streamGenerateContent?alt=sse&key={}",
-                base_url, model_name, api_key
-            );
-            for attempt in 0..2 {
-                let resp_res = self
-                    .http
-                    .post(&attempt_url)
-                    .timeout(std::time::Duration::from_secs(20))
-                    .header(CONTENT_TYPE, "application/json")
-                    .json(&body)
-                    .send()
-                    .await;
+        for attempt in 0..2 {
+            let resp_res = self
+                .http
+                .post(&attempt_url)
+                .timeout(std::time::Duration::from_secs(20))
+                .header(CONTENT_TYPE, "application/json")
+                .json(&body)
+                .send()
+                .await;
 
-                let resp = match resp_res {
-                    Ok(r) => r,
-                    Err(e) => {
-                        let msg = if e.is_timeout() {
-                            format!("Gemini request timed out on {}", model_name)
-                        } else {
-                            format!("Gemini connection error on {}", model_name)
-                        };
-                        last_err = msg;
-                        if attempt == 0 {
-                            tokio::time::sleep(std::time::Duration::from_millis(600)).await;
-                            continue;
-                        }
-                        break;
-                    }
-                };
-
-                if resp.status().is_success() {
-                    final_resp = Some(resp);
-                    break 'outer;
-                }
-
-                let status = resp.status();
-                let err_body = resp.text().await.unwrap_or_default();
-                last_err = format!("Gemini API error ({}): {}", status, &err_body[..err_body.len().min(400)]);
-
-                if status.as_u16() == 503 || status.as_u16() == 429 {
+            let resp = match resp_res {
+                Ok(r) => r,
+                Err(e) => {
+                    let msg = if e.is_timeout() {
+                        format!("Gemini request timed out on {}", cfg.model)
+                    } else {
+                        format!("Gemini connection error on {}", cfg.model)
+                    };
+                    last_err = msg;
                     if attempt == 0 {
                         tokio::time::sleep(std::time::Duration::from_millis(600)).await;
                         continue;
                     }
-                    // Move to fallback model on next outer iteration
                     break;
-                } else {
-                    return Err(last_err);
                 }
+            };
+
+            if resp.status().is_success() {
+                final_resp = Some(resp);
+                break;
             }
+
+            let status = resp.status();
+            let err_body = resp.text().await.unwrap_or_default();
+            last_err = format!("Gemini API error ({}): {}", status, &err_body[..err_body.len().min(400)]);
+
+            if status.as_u16() == 503 && attempt == 0 {
+                tokio::time::sleep(std::time::Duration::from_millis(600)).await;
+                continue;
+            }
+            return Err(last_err);
         }
 
         let resp = final_resp.ok_or(last_err)?;

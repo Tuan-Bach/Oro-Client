@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { X, Copy, Check, Sliders, Trash2, Cpu, Compass, Hammer, Sparkles } from "lucide-react";
 import type { AgentModeId, SessionRecord } from "../../types.js";
+import { appConfirm } from "./AppDialog.js";
 
 interface SessionConfigModalProps {
   session: SessionRecord;
@@ -84,8 +85,14 @@ export const SessionConfigModal: React.FC<SessionConfigModalProps> = ({
     }
   };
 
-  const handleDelete = () => {
-    if (window.confirm(`Are you sure you want to delete session "${session.title}"?`)) {
+  const handleDelete = async () => {
+    const ok = await appConfirm({
+      title: "Delete Session",
+      message: `Are you sure you want to delete session "${session.title}"?`,
+      confirmLabel: "Delete",
+      destructive: true,
+    });
+    if (ok) {
       onDelete?.(session.id);
       onClose();
     }
