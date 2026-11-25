@@ -1,3 +1,4 @@
+pub mod compaction;
 pub mod provider;
 pub mod snapshot;
 pub mod tools;

@@ -1,18 +1,28 @@
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { Suspense, lazy, useCallback, useEffect, useRef, useState } from "react";
 import { TitleBar } from "./components/TitleBar.js";
 import { SidebarDrawer } from "./components/SidebarDrawer.js";
 import { ChatPanel, type ChatMessageUI } from "./components/ChatPanel.js";
-import { EditorPanel, type OpenTab } from "./components/EditorPanel.js";
-import { ModelSetupModal } from "./components/ModelSetupModal.js";
+import type { OpenTab } from "./components/EditorPanel.js";
 import { SettingsModal, getFontStack } from "./components/SettingsModal.js";
-import { SessionConfigModal } from "./components/SessionConfigModal.js";
 import { PromptModal } from "./components/PromptModal.js";
 import { SplitResizer } from "./components/SplitResizer.js";
-import { QuickSwitcherModal } from "./components/QuickSwitcherModal.js";
 import { SplashScreen } from "./components/SplashScreen.js";
 import { AppDialogHost, appAlert } from "./components/AppDialog.js";
 import { ToastHost, showToast } from "./components/Toast.js";
 import { isBinaryMediaPath } from "./components/MediaViewer.js";
+
+const EditorPanel = lazy(() =>
+  import("./components/EditorPanel.js").then((m) => ({ default: m.EditorPanel }))
+);
+const ModelSetupModal = lazy(() =>
+  import("./components/ModelSetupModal.js").then((m) => ({ default: m.ModelSetupModal }))
+);
+const SessionConfigModal = lazy(() =>
+  import("./components/SessionConfigModal.js").then((m) => ({ default: m.SessionConfigModal }))
+);
+const QuickSwitcherModal = lazy(() =>
+  import("./components/QuickSwitcherModal.js").then((m) => ({ default: m.QuickSwitcherModal }))
+);
 import { recordUsage } from "./utils/usageTracker.js";
 import type {
   AgentModeId,
@@ -360,6 +370,39 @@ export const App: React.FC = () => {
   useEffect(() => {
     reloadWorkspace();
   }, [reloadWorkspace]);
+
+  // Live File Watcher: auto-refresh file tree when external edits occur in the workspace
+  useEffect(() => {
+    let unlisten: (() => void) | null = null;
+    let debounceTimer: number | null = null;
+    let cancelled = false;
+    const isTauri = typeof window !== "undefined" && Boolean((window as any).__TAURI_INTERNALS__);
+    if (!isTauri) return;
+
+    import("@tauri-apps/api/event")
+      .then(({ listen }) =>
+        listen("vault-changed", () => {
+          if (debounceTimer) window.clearTimeout(debounceTimer);
+          debounceTimer = window.setTimeout(async () => {
+            try {
+              const treeData = await window.oro.getTree();
+              if (!cancelled) setTree(treeData);
+            } catch {}
+          }, 350);
+        })
+      )
+      .then((fn) => {
+        if (cancelled) fn();
+        else unlisten = fn;
+      })
+      .catch(() => {});
+
+    return () => {
+      cancelled = true;
+      if (debounceTimer) window.clearTimeout(debounceTimer);
+      unlisten?.();
+    };
+  }, []);
 
   const handleToggleTheme = useCallback(async () => {
     const cycle: Record<"dark" | "light" | "monokai", "dark" | "light" | "monokai"> = {
@@ -1520,6 +1563,7 @@ export const App: React.FC = () => {
                     zIndex: 35,
                   }}
                 />
+                <Suspense fallback={null}>
                 <EditorPanel
                   tabs={tabs}
                   activePath={activeTabPath}
@@ -1548,6 +1592,7 @@ export const App: React.FC = () => {
                   onToggleExpand={() => setIsFloatingExpanded((prev) => !prev)}
                   onToggleDockMode={handleToggleEditorDockMode}
                 />
+                </Suspense>
               </div>
             )}
           </div>
@@ -1577,6 +1622,7 @@ export const App: React.FC = () => {
               border: "1px solid var(--border)",
             }}
           >
+            <Suspense fallback={null}>
             <EditorPanel
               tabs={tabs}
               activePath={activeTabPath}
@@ -1603,11 +1649,13 @@ export const App: React.FC = () => {
               dockMode="split"
               onToggleDockMode={handleToggleEditorDockMode}
             />
+            </Suspense>
           </div>
         )}
       </div>
 
       {/* Modals */}
+      <Suspense fallback={null}>
       {activeModal === "settings" && config && (
         <SettingsModal
           config={config}
@@ -1620,6 +1668,7 @@ export const App: React.FC = () => {
 
       <AppDialogHost />
       <ToastHost />
+      </Suspense>
 
       {activeModal === "new_file" && (
         <PromptModal

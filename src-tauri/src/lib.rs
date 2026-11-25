@@ -7,7 +7,7 @@ pub mod vault;
 
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
-use tauri::Manager;
+use tauri::{Emitter, Manager};
 use commands::AppState;
 use db::CoworkerStore;
 use scheduler::CoworkerScheduler;
@@ -59,6 +59,7 @@ pub fn run() {
                 scheduler,
                 workspace_root,
                 llm_client,
+                active_chat_task: Arc::new(Mutex::new(None)),
             });
 
             // ==================== SYSTEM TRAY ====================
@@ -117,6 +118,76 @@ pub fn run() {
             }
 
             let _tray = tray_builder.build(app)?;
+
+            // Lightweight debounced workspace watcher (emits "vault-changed" on external file edits)
+            let watch_handle = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                use std::collections::hash_map::DefaultHasher;
+                use std::hash::{Hash, Hasher};
+
+                fn compute_dir_sig(root: &std::path::Path, depth: usize, hasher: &mut DefaultHasher) {
+                    if depth > 5 {
+                        return;
+                    }
+                    let Ok(entries) = std::fs::read_dir(root) else { return };
+                    let mut paths: Vec<std::path::PathBuf> = entries
+                        .filter_map(|e| e.ok().map(|de| de.path()))
+                        .collect();
+                    paths.sort();
+                    for p in paths {
+                        let name = p.file_name().and_then(|n| n.to_str()).unwrap_or("");
+                        if matches!(
+                            name,
+                            ".git" | "node_modules" | "target" | ".trash" | ".oro" | "dist" | "dist-test"
+                        ) {
+                            continue;
+                        }
+                        if let Ok(meta) = std::fs::metadata(&p) {
+                            name.hash(hasher);
+                            meta.len().hash(hasher);
+                            if let Ok(mtime) = meta.modified()
+                                && let Ok(dur) = mtime.duration_since(std::time::UNIX_EPOCH)
+                            {
+                                dur.as_secs().hash(hasher);
+                            }
+                            if meta.is_dir() {
+                                compute_dir_sig(&p, depth + 1, hasher);
+                            }
+                        }
+                    }
+                }
+
+                let mut last_root: Option<PathBuf> = None;
+                let mut last_sig: Option<u64> = None;
+                let mut interval = tokio::time::interval(std::time::Duration::from_secs(2));
+                loop {
+                    interval.tick().await;
+                    let current_root = {
+                        let Some(state) = watch_handle.try_state::<AppState>() else { continue };
+                        let Ok(guard) = state.workspace_root.lock() else { continue };
+                        guard.clone()
+                    };
+                    let root_clone = current_root.clone();
+                    let sig = tokio::task::spawn_blocking(move || {
+                        let mut h = DefaultHasher::new();
+                        compute_dir_sig(&root_clone, 0, &mut h);
+                        h.finish()
+                    })
+                    .await
+                    .ok();
+
+                    if let Some(s) = sig {
+                        if last_root.as_ref() == Some(&current_root) {
+                            if last_sig.is_some() && last_sig != Some(s) {
+                                let _ = watch_handle.emit("vault-changed", ());
+                            }
+                        } else {
+                            last_root = Some(current_root);
+                        }
+                        last_sig = Some(s);
+                    }
+                }
+            });
 
             Ok(())
         })

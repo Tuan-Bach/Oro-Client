@@ -1275,6 +1275,16 @@ export const ChatPanel: React.FC<ChatPanelProps> = React.memo(({
                 ]
               : []),
             {
+              id: "compact",
+              label: "Compact Context (/compact)",
+              icon: <Sparkles size={13} />,
+              onClick: () => {
+                if (!isStreaming) {
+                  onSendMessage("/compact");
+                }
+              },
+            },
+            {
               id: "pin",
               label: "Pin",
               icon: <Pin size={13} />,

@@ -74,7 +74,7 @@ impl Default for ProviderConfig {
 }
 
 pub struct LlmClient {
-    http: reqwest::Client,
+    pub http: reqwest::Client,
 }
 
 impl Default for LlmClient {

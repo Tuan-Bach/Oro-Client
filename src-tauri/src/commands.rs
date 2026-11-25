@@ -18,6 +18,7 @@ pub struct AppState {
     pub scheduler: Arc<CoworkerScheduler>,
     pub workspace_root: Arc<Mutex<PathBuf>>,
     pub llm_client: Arc<LlmClient>,
+    pub active_chat_task: Arc<Mutex<Option<tokio::task::AbortHandle>>>,
 }
 
 // ==================== CO-WORKER COMMANDS ====================
@@ -410,8 +411,17 @@ pub async fn send_chat_message(
 
     let max_steps = cfg_json["maxAgentSteps"].as_u64().unwrap_or(12) as usize;
     let store_arc = state.store.clone();
+    let active_task_arc = state.active_chat_task.clone();
 
-    tokio::spawn(async move {
+    // Abort any lingering previous turn before starting a new one
+    if let Ok(mut guard) = active_task_arc.lock()
+        && let Some(prev) = guard.take()
+    {
+        prev.abort();
+    }
+
+    let clear_arc = active_task_arc.clone();
+    let handle = tokio::spawn(async move {
         use tauri::Emitter;
         let emit_handle = app.clone();
         let emit_fn = move |evt: crate::agent::orchestrator::StreamEvent| {
@@ -441,14 +451,27 @@ pub async fn send_chat_message(
                 error: Some(err),
             });
         }
+
+        if let Ok(mut guard) = clear_arc.lock() {
+            *guard = None;
+        }
     });
+
+    if let Ok(mut guard) = active_task_arc.lock() {
+        *guard = Some(handle.abort_handle());
+    }
 
     Ok(())
 }
 
 #[tauri::command]
-pub fn cancel_chat(app: tauri::AppHandle) -> Result<(), String> {
+pub fn cancel_chat(app: tauri::AppHandle, state: State<'_, AppState>) -> Result<(), String> {
     use tauri::Emitter;
+    if let Ok(mut guard) = state.active_chat_task.lock()
+        && let Some(handle) = guard.take()
+    {
+        handle.abort();
+    }
     let _ = app.emit(
         "stream-event",
         crate::agent::orchestrator::StreamEvent {

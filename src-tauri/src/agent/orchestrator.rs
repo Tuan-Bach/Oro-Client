@@ -3,9 +3,10 @@ use std::sync::{Arc, Mutex};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tokio::sync::mpsc;
+use crate::agent::compaction::{build_compaction_prompt, build_local_fallback_summary, compact_for_context};
 use crate::agent::provider::{LlmClient, LlmMessage, LlmStreamEvent, ProviderConfig, ToolCall};
 use crate::agent::snapshot::SnapshotManager;
-use crate::agent::tools::{get_agent_tools, ToolExecutor};
+use crate::agent::tools::{execute_async_tool, get_agent_tools, ToolExecutor};
 use crate::db::{CoworkerStore, TurnSnapshotRecord};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -139,6 +140,156 @@ Guiding Principles:
             store.list_messages(session_id).unwrap_or_default()
         };
 
+        // 2b. Handle `/compact [optional focus]` slash command
+        let trimmed_prompt = user_prompt.trim();
+        if trimmed_prompt.eq_ignore_ascii_case("/compact")
+            || trimmed_prompt.to_lowercase().starts_with("/compact ")
+        {
+            let focus = trimmed_prompt
+                .strip_prefix("/compact")
+                .or_else(|| trimmed_prompt.strip_prefix("/COMPACT"))
+                .map(|s| s.trim())
+                .filter(|s| !s.is_empty());
+
+            if db_messages.len() < 2 {
+                let msg = "Nothing to compact yet — this session only has a few messages.";
+                emit_event(StreamEvent {
+                    r#type: "text".to_string(),
+                    mode: None,
+                    phase: None,
+                    phase_detail: None,
+                    text_delta: Some(msg.to_string()),
+                    tool_call: None,
+                    tool_result: None,
+                    snapshot: None,
+                    error: None,
+                });
+                emit_event(StreamEvent {
+                    r#type: "done".to_string(),
+                    mode: None,
+                    phase: None,
+                    phase_detail: None,
+                    text_delta: None,
+                    tool_call: None,
+                    tool_result: None,
+                    snapshot: None,
+                    error: None,
+                });
+                return Ok(());
+            }
+
+            let compact_prompt = build_compaction_prompt(&db_messages, focus);
+            let (tx, mut rx) = mpsc::channel(64);
+            let client = self.llm_client.clone();
+            let cfg_clone = ProviderConfig {
+                provider: provider_cfg.provider.clone(),
+                model: provider_cfg.model.clone(),
+                api_key: provider_cfg.api_key.clone(),
+                base_url: provider_cfg.base_url.clone(),
+                reasoning_effort: Some("low".to_string()),
+            };
+            let compact_msgs = vec![LlmMessage {
+                role: "user".to_string(),
+                content: compact_prompt,
+                tool_calls: None,
+                tool_name: None,
+                tool_call_id: None,
+            }];
+
+            tokio::spawn(async move {
+                if let Err(e) = client
+                    .stream_chat(
+                        &cfg_clone,
+                        "You are a concise technical summarizer.",
+                        &compact_msgs,
+                        &[],
+                        tx.clone(),
+                    )
+                    .await
+                {
+                    let _ = tx.send(LlmStreamEvent::Error { error: e }).await;
+                }
+            });
+
+            let header = format!(
+                "### Compacted Context ({} messages condensed)\n\n",
+                db_messages.len()
+            );
+            emit_event(StreamEvent {
+                r#type: "text".to_string(),
+                mode: None,
+                phase: None,
+                phase_detail: None,
+                text_delta: Some(header.clone()),
+                tool_call: None,
+                tool_result: None,
+                snapshot: None,
+                error: None,
+            });
+
+            let mut summary_body = String::new();
+            while let Some(evt) = rx.recv().await {
+                match evt {
+                    LlmStreamEvent::Text { delta } => {
+                        summary_body.push_str(&delta);
+                        emit_event(StreamEvent {
+                            r#type: "text".to_string(),
+                            mode: None,
+                            phase: None,
+                            phase_detail: None,
+                            text_delta: Some(delta),
+                            tool_call: None,
+                            tool_result: None,
+                            snapshot: None,
+                            error: None,
+                        });
+                    }
+                    LlmStreamEvent::Done => break,
+                    LlmStreamEvent::Error { .. } => {
+                        if summary_body.is_empty() {
+                            let fb = build_local_fallback_summary(&db_messages);
+                            summary_body.push_str(&fb);
+                            emit_event(StreamEvent {
+                                r#type: "text".to_string(),
+                                mode: None,
+                                phase: None,
+                                phase_detail: None,
+                                text_delta: Some(fb),
+                                tool_call: None,
+                                tool_result: None,
+                                snapshot: None,
+                                error: None,
+                            });
+                        }
+                        break;
+                    }
+                    _ => {}
+                }
+            }
+
+            let full_summary = format!("{}{}", header, summary_body.trim());
+            let old_ids: Vec<String> = db_messages.iter().map(|m| m.id.clone()).collect();
+            {
+                let store = self.store.lock().map_err(|e| e.to_string())?;
+                let _ = store.delete_messages(&old_ids);
+                let _ = store.append_message(session_id, "assistant", &full_summary, None, None, None);
+                let _ = store.update_session(session_id, None, None, Some(summary_body.trim()));
+            }
+
+            emit_event(StreamEvent {
+                r#type: "done".to_string(),
+                mode: None,
+                phase: None,
+                phase_detail: None,
+                text_delta: None,
+                tool_call: None,
+                tool_result: None,
+                snapshot: None,
+                error: None,
+            });
+            return Ok(());
+        }
+
         let mut llm_messages: Vec<LlmMessage> = db_messages
             .into_iter()
             .map(|m| {
@@ -189,7 +340,7 @@ Guiding Principles:
                 reasoning_effort: provider_cfg.reasoning_effort.clone(),
             };
             let sp_clone = system_prompt.clone();
-            let msgs_clone = llm_messages.clone();
+            let msgs_clone = compact_for_context(llm_messages.clone(), 60_000);
             let tools_clone = tools.clone();
 
             tokio::spawn(async move {
@@ -284,7 +435,11 @@ Guiding Principles:
                 });
 
                 for tc in &turn_tool_calls {
-                    let res = {
+                    let res = if let Some(async_res) =
+                        execute_async_tool(&self.workspace_root, &self.llm_client.http, &tc.name, &tc.args).await
+                    {
+                        async_res
+                    } else {
                         let store = self.store.lock().map_err(|e| e.to_string())?;
                         let executor = ToolExecutor::new(
                             &self.workspace_root,
