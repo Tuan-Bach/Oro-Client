@@ -892,12 +892,19 @@ impl<'a> ToolExecutor<'a> {
 
                 let home = std::env::var("USERPROFILE").or_else(|_| std::env::var("HOME")).unwrap_or_else(|_| ".".to_string());
                 let cfg_path = std::path::PathBuf::from(home).join(".oro").join("config.json");
-                let api_key = std::fs::read_to_string(&cfg_path)
+                let cfg_json = std::fs::read_to_string(&cfg_path)
                     .ok()
-                    .and_then(|c| serde_json::from_str::<Value>(&c).ok())
+                    .and_then(|c| serde_json::from_str::<Value>(&c).ok());
+                let api_key = cfg_json
+                    .as_ref()
                     .and_then(|v| v["providers"]["gemini"]["apiKey"].as_str().map(|s| s.to_string()))
                     .or_else(|| std::env::var("GEMINI_API_KEY").ok())
                     .unwrap_or_default();
+                let video_model = cfg_json
+                    .as_ref()
+                    .and_then(|v| v["providers"]["gemini"]["videoModel"].as_str().map(|s| s.to_string()))
+                    .filter(|s| !s.is_empty())
+                    .unwrap_or_else(|| "veo-3.1-generate-preview".to_string());
 
                 if api_key.is_empty() {
                     return ToolExecutionResult {
@@ -912,14 +919,15 @@ impl<'a> ToolExecutor<'a> {
                     let rt = tokio::runtime::Runtime::new().map_err(|e| e.to_string())?;
                     rt.block_on(async move {
                         let start_url = format!(
-                            "https://generativelanguage.googleapis.com/v1beta/models/veo-2.0-generate-001:predictLongRunning?key={}",
-                            api_key
+                            "https://generativelanguage.googleapis.com/v1beta/models/{}:predictLongRunning?key={}",
+                            video_model, api_key
                         );
                         let body = json!({
                             "instances": [{ "prompt": prompt_owned }],
                             "parameters": {
-                                "aspectRatio": aspect_ratio,
-                                "personGeneration": "allow_adult"
+                                "sampleCount": 1,
+                                "resolution": "720p",
+                                "aspectRatio": aspect_ratio
                             }
                         });
                         let client = reqwest::Client::new();
