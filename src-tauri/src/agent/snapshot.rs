@@ -67,8 +67,12 @@ impl SnapshotManager {
         }
         ctx.recorded_paths.insert(normalized.clone());
 
-        let source_rel = if action == "moved" && original_path.is_some() {
-            original_path.unwrap().replace('\\', "/").trim_start_matches('/').to_string()
+        let source_rel = if action == "moved" {
+            if let Some(orig) = original_path {
+                orig.replace('\\', "/").trim_start_matches('/').to_string()
+            } else {
+                normalized.clone()
+            }
         } else {
             normalized.clone()
         };
@@ -174,8 +178,8 @@ impl SnapshotManager {
             }
 
             // 2. Files moved during the turn: move back to original path
-            if item.action == "moved" {
-                if let Some(ref orig) = item.original_path {
+            if item.action == "moved"
+                && let Some(ref orig) = item.original_path {
                     let original_abs = self.workspace_root.join(orig);
                     if current_abs.exists() && !original_abs.exists() {
                         if let Some(parent) = original_abs.parent() {
@@ -187,7 +191,6 @@ impl SnapshotManager {
                         }
                     }
                 }
-            }
 
             // 3. Files modified or deleted: restore from backup
             if let Some(ref backup_rel) = item.backup_rel_path {

@@ -325,39 +325,30 @@ fn load_oro_config() -> serde_json::Value {
     let mut needs_save = false;
     if let Some(providers) = val.get_mut("providers").and_then(|p| p.as_object_mut()) {
         if let Some(gemini) = providers.get_mut("gemini").and_then(|g| g.as_object_mut()) {
-            if let Some(m) = gemini.get("model").and_then(|m| m.as_str()) {
-                if m.starts_with("gemini-1.") || m.starts_with("gemini-2.") {
+            if let Some(m) = gemini.get("model").and_then(|m| m.as_str())
+                && (m.starts_with("gemini-1.") || m.starts_with("gemini-2.")) {
                     gemini.insert("model".to_string(), serde_json::json!("gemini-3.8-flash"));
                     needs_save = true;
                 }
-            }
             // Populate environment key if not explicitly set
-            if gemini.get("apiKey").and_then(|k| k.as_str()).map_or(true, |k| k.trim().is_empty()) {
-                if let Ok(env_key) = std::env::var("GEMINI_API_KEY").or_else(|_| std::env::var("GOOGLE_API_KEY")) {
-                    if !env_key.trim().is_empty() {
+            if gemini.get("apiKey").and_then(|k| k.as_str()).is_none_or(|k| k.trim().is_empty())
+                && let Ok(env_key) = std::env::var("GEMINI_API_KEY").or_else(|_| std::env::var("GOOGLE_API_KEY"))
+                    && !env_key.trim().is_empty() {
                         gemini.insert("apiKey".to_string(), serde_json::json!(env_key.trim()));
                     }
-                }
-            }
         }
-        if let Some(openai) = providers.get_mut("openai").and_then(|o| o.as_object_mut()) {
-            if openai.get("apiKey").and_then(|k| k.as_str()).map_or(true, |k| k.trim().is_empty()) {
-                if let Ok(env_key) = std::env::var("OPENAI_API_KEY") {
-                    if !env_key.trim().is_empty() {
+        if let Some(openai) = providers.get_mut("openai").and_then(|o| o.as_object_mut())
+            && openai.get("apiKey").and_then(|k| k.as_str()).is_none_or(|k| k.trim().is_empty())
+                && let Ok(env_key) = std::env::var("OPENAI_API_KEY")
+                    && !env_key.trim().is_empty() {
                         openai.insert("apiKey".to_string(), serde_json::json!(env_key.trim()));
                     }
-                }
-            }
-        }
-        if let Some(anthropic) = providers.get_mut("anthropic").and_then(|a| a.as_object_mut()) {
-            if anthropic.get("apiKey").and_then(|k| k.as_str()).map_or(true, |k| k.trim().is_empty()) {
-                if let Ok(env_key) = std::env::var("ANTHROPIC_API_KEY") {
-                    if !env_key.trim().is_empty() {
+        if let Some(anthropic) = providers.get_mut("anthropic").and_then(|a| a.as_object_mut())
+            && anthropic.get("apiKey").and_then(|k| k.as_str()).is_none_or(|k| k.trim().is_empty())
+                && let Ok(env_key) = std::env::var("ANTHROPIC_API_KEY")
+                    && !env_key.trim().is_empty() {
                         anthropic.insert("apiKey".to_string(), serde_json::json!(env_key.trim()));
                     }
-                }
-            }
-        }
     }
 
     if needs_save {
@@ -710,8 +701,12 @@ pub fn save_config(patch: serde_json::Value) -> Result<serde_json::Value, String
     fn merge_json(target: &mut serde_json::Value, source: &serde_json::Value) {
         if let (Some(t_obj), Some(s_obj)) = (target.as_object_mut(), source.as_object()) {
             for (k, v) in s_obj {
-                if v.is_object() && t_obj.get(k).map_or(false, |old| old.is_object()) {
-                    merge_json(t_obj.get_mut(k).unwrap(), v);
+                if v.is_object() {
+                    if let Some(old) = t_obj.get_mut(k).filter(|old| old.is_object()) {
+                        merge_json(old, v);
+                    } else {
+                        t_obj.insert(k.clone(), v.clone());
+                    }
                 } else {
                     t_obj.insert(k.clone(), v.clone());
                 }

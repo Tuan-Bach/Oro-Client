@@ -230,8 +230,8 @@ fn extract_frontmatter(
         }
 
         // List item under current_key
-        if let Some(caps) = list_re.captures(trimmed_end) {
-            if let Some(ref k) = current_key {
+        if let Some(caps) = list_re.captures(trimmed_end)
+            && let Some(ref k) = current_key {
                 let item = strip_quotes(caps.get(1).unwrap().as_str().trim());
                 if current_array.is_none() {
                     current_array = Some(Vec::new());
@@ -240,7 +240,6 @@ fn extract_frontmatter(
                 frontmatter.insert(k.clone(), serde_json::Value::Array(current_array.clone().unwrap()));
                 continue;
             }
-        }
 
         // Key-value pair
         if let Some(caps) = kv_re.captures(trimmed) {
@@ -277,10 +276,9 @@ fn extract_frontmatter(
 }
 
 fn strip_quotes(s: &str) -> String {
-    if (s.starts_with('"') && s.ends_with('"')) || (s.starts_with('\'') && s.ends_with('\'')) {
-        if s.len() >= 2 {
+    if ((s.starts_with('"') && s.ends_with('"')) || (s.starts_with('\'') && s.ends_with('\'')))
+        && s.len() >= 2 {
             return s[1..s.len() - 1].to_string();
         }
-    }
     s.to_string()
 }

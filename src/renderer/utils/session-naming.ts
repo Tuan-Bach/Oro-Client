@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Session Naming Utilities
  * Provides concise, readable placeholder names for new sessions
  * and intelligent, lightning-fast heuristic title generation from user prompts.

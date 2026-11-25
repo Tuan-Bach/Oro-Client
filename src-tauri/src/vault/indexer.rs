@@ -69,11 +69,10 @@ impl VaultIndexer {
                 .unwrap_or(0.0);
 
             // Fast skip: if already indexed and mtime has not changed, don't read or re-parse
-            if let Some(&saved_mtime) = existing_map.get(&rel_posix) {
-                if (saved_mtime - mtime_ms).abs() < 1.0 {
+            if let Some(&saved_mtime) = existing_map.get(&rel_posix)
+                && (saved_mtime - mtime_ms).abs() < 1.0 {
                     continue;
                 }
-            }
 
             has_mutations = true;
             if let Ok(content) = std::fs::read_to_string(&file_path) {
@@ -95,7 +94,7 @@ impl VaultIndexer {
         }
 
         // Clean up deleted notes
-        for (old_path, _) in &existing_map {
+        for old_path in existing_map.keys() {
             if !found_paths.contains(old_path) {
                 has_mutations = true;
                 store.delete_note(old_path)?;

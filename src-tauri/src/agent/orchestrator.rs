@@ -103,11 +103,10 @@ impl AgentOrchestrator {
 
         let mut pinned_context = String::new();
         for pf in &pinned_files {
-            if pf.pinned {
-                if let Ok(c) = std::fs::read_to_string(self.workspace_root.join(&pf.path)) {
+            if pf.pinned
+                && let Ok(c) = std::fs::read_to_string(self.workspace_root.join(&pf.path)) {
                     pinned_context.push_str(&format!("\n=== Pinned File: {} ===\n{}\n", pf.path, c));
                 }
-            }
         }
 
         let mut memory_context = String::new();
@@ -289,7 +288,7 @@ Guiding Principles:
                         let store = self.store.lock().map_err(|e| e.to_string())?;
                         let executor = ToolExecutor::new(
                             &self.workspace_root,
-                            &*store,
+                            &store,
                             &self.snapshot_manager,
                             session_id,
                         );
@@ -348,7 +347,7 @@ Guiding Principles:
             // Commit snapshot
             let snap_res = {
                 let store = self.store.lock().map_err(|e| e.to_string())?;
-                self.snapshot_manager.commit_turn(turn_ctx, &*store)
+                self.snapshot_manager.commit_turn(turn_ctx, &store)
             };
 
             if let Ok(Some(snap)) = snap_res {

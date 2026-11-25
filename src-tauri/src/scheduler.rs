@@ -30,8 +30,8 @@ impl SafetyGate {
             "delete_file" | "git_push" | "destructive_edit" => true,
             "shell_exec" => {
                 // Parse payload command if possible
-                if let Ok(val) = serde_json::from_str::<serde_json::Value>(payload_json) {
-                    if let Some(cmd) = val.get("command").and_then(|c| c.as_str()) {
+                if let Ok(val) = serde_json::from_str::<serde_json::Value>(payload_json)
+                    && let Some(cmd) = val.get("command").and_then(|c| c.as_str()) {
                         let trimmed = cmd.trim();
                         // Whitelist read-only commands
                         if trimmed == "git status"
@@ -44,7 +44,6 @@ impl SafetyGate {
                             return false;
                         }
                     }
-                }
                 true
             }
             _ => false,

@@ -123,8 +123,8 @@ impl LlmClient {
         let api_key = cfg
             .api_key
             .as_deref()
-            .or_else(|| option_env!("GEMINI_API_KEY"))
-            .or_else(|| option_env!("GOOGLE_API_KEY"))
+            .or(option_env!("GEMINI_API_KEY"))
+            .or(option_env!("GOOGLE_API_KEY"))
             .ok_or_else(|| "Gemini API key not configured. Set GEMINI_API_KEY or configure provider key.".to_string())?;
 
         let base_url = cfg
@@ -140,16 +140,13 @@ impl LlmClient {
         for msg in messages {
             match msg.role.as_str() {
                 "user" => {
-                    if let Some(prev) = contents.last_mut() {
-                        if prev["role"] == "user" {
-                            if let Some(parts) = prev["parts"].as_array_mut() {
-                                if parts.iter().all(|p| p.get("text").is_some()) {
+                    if let Some(prev) = contents.last_mut()
+                        && prev["role"] == "user"
+                            && let Some(parts) = prev["parts"].as_array_mut()
+                                && parts.iter().all(|p| p.get("text").is_some()) {
                                     parts.push(json!({ "text": msg.content }));
                                     continue;
                                 }
-                            }
-                        }
-                    }
                     contents.push(json!({
                         "role": "user",
                         "parts": [{ "text": msg.content }]
@@ -195,16 +192,13 @@ impl LlmClient {
                     });
 
                     // If previous content is user with functionResponse parts, merge
-                    if let Some(prev) = contents.last_mut() {
-                        if prev["role"] == "user" {
-                            if let Some(parts) = prev["parts"].as_array_mut() {
-                                if parts.iter().all(|p| p.get("functionResponse").is_some()) {
+                    if let Some(prev) = contents.last_mut()
+                        && prev["role"] == "user"
+                            && let Some(parts) = prev["parts"].as_array_mut()
+                                && parts.iter().all(|p| p.get("functionResponse").is_some()) {
                                     parts.push(part);
                                     continue;
                                 }
-                            }
-                        }
-                    }
 
                     contents.push(json!({
                         "role": "user",
@@ -352,9 +346,9 @@ impl LlmClient {
                     continue;
                 }
 
-                if let Ok(v) = serde_json::from_str::<Value>(payload) {
-                    if let Some(candidates) = v["candidates"].as_array() {
-                        if let Some(candidate) = candidates.first() {
+                if let Ok(v) = serde_json::from_str::<Value>(payload)
+                    && let Some(candidates) = v["candidates"].as_array()
+                        && let Some(candidate) = candidates.first() {
                             let cand_sig = candidate["thoughtSignature"]
                                 .as_str()
                                 .or_else(|| candidate["thought_signature"].as_str());
@@ -391,8 +385,6 @@ impl LlmClient {
                                 }
                             }
                         }
-                    }
-                }
             }
         }
 
@@ -413,7 +405,7 @@ impl LlmClient {
         let api_key = cfg
             .api_key
             .as_deref()
-            .or_else(|| option_env!("OPENAI_API_KEY"))
+            .or(option_env!("OPENAI_API_KEY"))
             .ok_or_else(|| "OpenAI API key not configured. Set OPENAI_API_KEY or configure provider key.".to_string())?;
 
         let base_url = cfg
@@ -541,15 +533,14 @@ impl LlmClient {
                     break;
                 }
 
-                if let Ok(v) = serde_json::from_str::<Value>(payload) {
-                    if let Some(choices) = v["choices"].as_array() {
-                        if let Some(choice) = choices.first() {
+                if let Ok(v) = serde_json::from_str::<Value>(payload)
+                    && let Some(choices) = v["choices"].as_array()
+                        && let Some(choice) = choices.first() {
                             let delta = &choice["delta"];
-                            if let Some(txt) = delta["content"].as_str() {
-                                if !txt.is_empty() {
+                            if let Some(txt) = delta["content"].as_str()
+                                && !txt.is_empty() {
                                     let _ = tx.send(LlmStreamEvent::Text { delta: txt.to_string() }).await;
                                 }
-                            }
                             if let Some(tcs) = delta["tool_calls"].as_array() {
                                 for tc_obj in tcs {
                                     let idx = tc_obj["index"].as_u64().unwrap_or(0) as usize;
@@ -559,24 +550,20 @@ impl LlmClient {
                                         args_buf: String::new(),
                                     });
 
-                                    if let Some(id) = tc_obj["id"].as_str() {
-                                        if !id.is_empty() {
+                                    if let Some(id) = tc_obj["id"].as_str()
+                                        && !id.is_empty() {
                                             entry.id = id.to_string();
                                         }
-                                    }
-                                    if let Some(name) = tc_obj["function"]["name"].as_str() {
-                                        if !name.is_empty() {
+                                    if let Some(name) = tc_obj["function"]["name"].as_str()
+                                        && !name.is_empty() {
                                             entry.name.push_str(name);
                                         }
-                                    }
                                     if let Some(args_chunk) = tc_obj["function"]["arguments"].as_str() {
                                         entry.args_buf.push_str(args_chunk);
                                     }
                                 }
                             }
                         }
-                    }
-                }
             }
         }
 
@@ -584,8 +571,8 @@ impl LlmClient {
         let mut indices: Vec<_> = pending_tools.keys().copied().collect();
         indices.sort_unstable();
         for idx in indices {
-            if let Some(pt) = pending_tools.remove(&idx) {
-                if !pt.name.is_empty() {
+            if let Some(pt) = pending_tools.remove(&idx)
+                && !pt.name.is_empty() {
                     let parsed_args: Value = serde_json::from_str(&pt.args_buf).unwrap_or(json!({}));
                     let tc = ToolCall {
                         id: pt.id,
@@ -595,7 +582,6 @@ impl LlmClient {
                     };
                     let _ = tx.send(LlmStreamEvent::ToolCall { call: tc }).await;
                 }
-            }
         }
 
         let _ = tx.send(LlmStreamEvent::Done).await;
@@ -615,7 +601,7 @@ impl LlmClient {
         let api_key = cfg
             .api_key
             .as_deref()
-            .or_else(|| option_env!("ANTHROPIC_API_KEY"))
+            .or(option_env!("ANTHROPIC_API_KEY"))
             .ok_or_else(|| "Anthropic API key not configured. Set ANTHROPIC_API_KEY or configure provider key.".to_string())?;
 
         let base_url = cfg
@@ -663,16 +649,13 @@ impl LlmClient {
                         "tool_use_id": msg.tool_call_id.as_deref().unwrap_or("tool_call"),
                         "content": msg.content
                     });
-                    if let Some(prev) = anthropic_messages.last_mut() {
-                        if prev["role"] == "user" {
-                            if let Some(arr) = prev["content"].as_array_mut() {
-                                if arr.iter().all(|b| b["type"] == "tool_result") {
+                    if let Some(prev) = anthropic_messages.last_mut()
+                        && prev["role"] == "user"
+                            && let Some(arr) = prev["content"].as_array_mut()
+                                && arr.iter().all(|b| b["type"] == "tool_result") {
                                     arr.push(block);
                                     continue;
                                 }
-                            }
-                        }
-                    }
                     anthropic_messages.push(json!({
                         "role": "user",
                         "content": [block]
@@ -683,7 +666,9 @@ impl LlmClient {
         }
 
         let mut headers = HeaderMap::new();
-        headers.insert("x-api-key", HeaderValue::from_str(api_key).unwrap());
+        let api_key_header = HeaderValue::from_str(api_key.trim())
+            .map_err(|_| "Invalid Anthropic API key format (contains unsupported header characters).".to_string())?;
+        headers.insert("x-api-key", api_key_header);
         headers.insert("anthropic-version", HeaderValue::from_static("2023-06-01"));
         headers.insert("anthropic-beta", HeaderValue::from_static("prompt-caching-2024-07-31"));
         headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
@@ -774,11 +759,10 @@ impl LlmClient {
                                 if let Some(txt) = delta["text"].as_str() {
                                     let _ = tx.send(LlmStreamEvent::Text { delta: txt.to_string() }).await;
                                 }
-                            } else if delta["type"] == "input_json_delta" {
-                                if let Some(chunk) = delta["partial_json"].as_str() {
+                            } else if delta["type"] == "input_json_delta"
+                                && let Some(chunk) = delta["partial_json"].as_str() {
                                     current_tool_input.push_str(chunk);
                                 }
-                            }
                         }
                         "content_block_stop" => {
                             if !current_tool_name.is_empty() {
@@ -917,11 +901,10 @@ impl LlmClient {
 
                 if let Ok(v) = serde_json::from_str::<Value>(&line) {
                     if let Some(msg) = v.get("message") {
-                        if let Some(txt) = msg["content"].as_str() {
-                            if !txt.is_empty() {
+                        if let Some(txt) = msg["content"].as_str()
+                            && !txt.is_empty() {
                                 let _ = tx.send(LlmStreamEvent::Text { delta: txt.to_string() }).await;
                             }
-                        }
                         if let Some(tcs) = msg["tool_calls"].as_array() {
                             for tc_obj in tcs {
                                 let fn_obj = &tc_obj["function"];

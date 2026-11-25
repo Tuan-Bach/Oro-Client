@@ -24,7 +24,7 @@ import {
   PanelLeftClose,
 } from "lucide-react";
 import type { TaskRecord, MemoryRecord, TreeNode } from "../../types.js";
-import type { WorkspaceSummary } from "../../electron/ipc-types.js";
+import type { WorkspaceSummary } from "../../ipc-types.js";
 import { ContextMenu, type ContextMenuItem } from "./ContextMenu.js";
 import { PromptModal } from "./PromptModal.js";
 import { processDroppedDataTransfer } from "../utils/fileDropHelper.js";

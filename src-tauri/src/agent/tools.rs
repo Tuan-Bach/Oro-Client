@@ -228,11 +228,10 @@ fn format_tree_items(
         if n.node_type == "directory" {
             *total_dirs += 1;
             out.push_str(&format!("{}📁 {}/\n", pad, n.name));
-            if let Some(ref children) = n.children {
-                if indent < 3 {
+            if let Some(ref children) = n.children
+                && indent < 3 {
                     format_tree_items(children, indent + 1, out, total_files, total_dirs);
                 }
-            }
         } else {
             *total_files += 1;
             out.push_str(&format!("{}📄 {}\n", pad, n.name));

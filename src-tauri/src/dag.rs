@@ -59,11 +59,10 @@ impl TaskDag {
         let mut path: Vec<String> = Vec::new();
 
         for task in tasks {
-            if state.get(task.id.as_str()).copied().unwrap_or(0) == 0 {
-                if let Some(cycle) = Self::dfs_cycle(task.id.as_str(), &task_map, &mut state, &mut path) {
+            if state.get(task.id.as_str()).copied().unwrap_or(0) == 0
+                && let Some(cycle) = Self::dfs_cycle(task.id.as_str(), &task_map, &mut state, &mut path) {
                     return Err(DagError::CycleDetected(cycle));
                 }
-            }
         }
 
         Ok(())
@@ -96,11 +95,10 @@ impl TaskDag {
                     }
                     cycle.push(dep_str.to_string());
                     return Some(cycle);
-                } else if dep_state == 0 {
-                    if let Some(c) = Self::dfs_cycle(dep_str, task_map, state, path) {
+                } else if dep_state == 0
+                    && let Some(c) = Self::dfs_cycle(dep_str, task_map, state, path) {
                         return Some(c);
                     }
-                }
             }
         }
 
@@ -111,7 +109,7 @@ impl TaskDag {
 
     /// Computes all tasks ready for execution:
     /// Status must be 'pending', and all dependencies must have status 'done'.
-    pub fn compute_ready_tasks<'a>(tasks: &'a [CoworkerTask]) -> Vec<&'a CoworkerTask> {
+    pub fn compute_ready_tasks(tasks: &[CoworkerTask]) -> Vec<&CoworkerTask> {
         let task_map: HashMap<&str, &CoworkerTask> =
             tasks.iter().map(|t| (t.id.as_str(), t)).collect();
 

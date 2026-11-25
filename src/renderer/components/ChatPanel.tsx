@@ -602,7 +602,7 @@ interface ChatPanelProps {
   onUndoToMessage?: (messageId: string) => Promise<string | void>;
 }
 
-export const ChatPanel: React.FC<ChatPanelProps> = ({
+export const ChatPanel: React.FC<ChatPanelProps> = React.memo(({
   messages,
   sessionFiles,
   isStreaming,
@@ -2186,4 +2186,4 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
       </div>
     </div>
   );
-};
+});

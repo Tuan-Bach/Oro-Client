@@ -1524,10 +1524,8 @@ impl CoworkerStore {
 
             if let Ok(mapped) = rows {
                 let mut list = Vec::new();
-                for m in mapped {
-                    if let Ok(item) = m {
-                        list.push(item);
-                    }
+                for item in mapped.flatten() {
+                    list.push(item);
                 }
                 if !list.is_empty() {
                     return Ok(list);
@@ -1869,7 +1867,7 @@ mod tests {
                 "Patch memory leak",
                 "Coder",
                 "standard",
-                &[task1.id.clone()],
+                std::slice::from_ref(&task1.id),
             )
             .expect("create task 2");
         assert_eq!(task2.dependencies, vec![task1.id.clone()]);

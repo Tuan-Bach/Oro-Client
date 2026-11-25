@@ -296,14 +296,13 @@ impl VaultFs {
             let path = entry.path();
             if path.is_dir() {
                 Self::walk_markdown_files(workspace_root, &path, results)?;
-            } else if path.is_file() {
-                if let Some(ext) = path.extension() {
+            } else if path.is_file()
+                && let Some(ext) = path.extension() {
                     let ext_str = ext.to_string_lossy().to_lowercase();
                     if ext_str == "md" || ext_str == "markdown" || ext_str == "mdx" {
                         results.push(path);
                     }
                 }
-            }
         }
         Ok(())
     }

@@ -245,7 +245,7 @@ fn test_work_stealing_scheduler() {
             .create_task(&g.id, "Branch 1: Audit Tokens", "Scout", "fast", &[])
             .unwrap();
         let tb = s
-            .create_task(&g.id, "Branch 1: Rewrite Auth", "Coder", "standard", &[ta.id.clone()])
+            .create_task(&g.id, "Branch 1: Rewrite Auth", "Coder", "standard", std::slice::from_ref(&ta.id))
             .unwrap();
         let tc = s
             .create_task(&g.id, "Branch 2: Update Doc", "Writer", "fast", &[])
@@ -444,7 +444,7 @@ fn test_store_lifecycle() {
             "Patch memory leak",
             "Coder",
             "standard",
-            &[task1.id.clone()],
+            std::slice::from_ref(&task1.id),
         )
         .expect("create task 2");
     assert_eq!(task2.dependencies, vec![task1.id.clone()]);

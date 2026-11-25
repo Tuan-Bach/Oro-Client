@@ -3,7 +3,6 @@
   "version": "0.2.0",
   "description": "Oro — AI Agents & All-in-One Second Brain Workspace",
   "type": "module",
-  "main": "./dist/electron/main.js",
   "engines": {
     "node": ">=22.5.0"
   },
@@ -14,8 +13,8 @@
     "build": "tsc && vite build",
     "tauri:build": "tauri build",
     "tauri:release": "npm run build:ui && tauri build --no-bundle",
-    "test": "tsc -p tsconfig.test.json && node --test dist-test/tests/*.test.js",
-    "typecheck": "tsc --noEmit && tsc -p tsconfig.test.json --noEmit"
+    "test": "cargo run --manifest-path src-tauri/Cargo.toml --bin test_coworker",
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@monaco-editor/react": "^4.7.0",

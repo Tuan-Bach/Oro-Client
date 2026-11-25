@@ -5,7 +5,6 @@ import { ChatPanel, type ChatMessageUI } from "./components/ChatPanel.js";
 import { EditorPanel, type OpenTab } from "./components/EditorPanel.js";
 import { ModelSetupModal } from "./components/ModelSetupModal.js";
 import { SettingsModal, getFontStack } from "./components/SettingsModal.js";
-import { WorkspaceModal } from "./components/WorkspaceModal.js";
 import { SessionConfigModal } from "./components/SessionConfigModal.js";
 import { PromptModal } from "./components/PromptModal.js";
 import { SplitResizer } from "./components/SplitResizer.js";
@@ -27,7 +26,7 @@ import {
   isDefaultSessionTitle,
   generateNewSessionTitle,
   generateShortSessionTitle,
-} from "../agent/session-naming.js";
+} from "./utils/session-naming.js";
 
 export const App: React.FC = () => {
   const [workspace, setWorkspace] = useState<WorkspaceSummary | null>(null);
@@ -1596,15 +1595,6 @@ export const App: React.FC = () => {
           onClose={() => setActiveModal(null)}
           onConfigUpdated={(updatedCfg) => setConfig(updatedCfg)}
           onSwitchWorkspace={handleSwitchWorkspace}
-        />
-      )}
-
-      {(activeModal === "workspace" || activeModal === "workspace_create") && workspace && (
-        <WorkspaceModal
-          currentRoot={workspace.root}
-          onClose={() => setActiveModal(null)}
-          onSwitch={handleSwitchWorkspace}
-          initialTab={activeModal === "workspace_create" ? "create" : "open"}
         />
       )}
 
