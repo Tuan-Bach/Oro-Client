@@ -371,7 +371,12 @@ export const App: React.FC = () => {
     reloadWorkspace();
   }, [reloadWorkspace]);
 
-  // Live File Watcher: auto-refresh file tree when external edits occur in the workspace
+  const tabsRef = useRef<OpenTab[]>([]);
+  useEffect(() => {
+    tabsRef.current = tabs;
+  }, [tabs]);
+
+  // Live File Watcher: auto-refresh file tree & clean open tabs when external/AI edits occur
   useEffect(() => {
     let unlisten: (() => void) | null = null;
     let debounceTimer: number | null = null;
@@ -387,6 +392,33 @@ export const App: React.FC = () => {
             try {
               const treeData = await window.oro.getTree();
               if (!cancelled) setTree(treeData);
+
+              // Auto-reload open clean tabs that changed on disk
+              const openTabs = tabsRef.current;
+              for (const tab of openTabs) {
+                if (isBinaryMediaPath(tab.path)) continue;
+                try {
+                  const disk = await window.oro.readFile(tab.path);
+                  if (cancelled) break;
+                  if (disk.content !== tab.originalContent) {
+                    if (!tab.isDirty) {
+                      setTabs((prev) =>
+                        prev.map((t) =>
+                          t.path === tab.path && !t.isDirty
+                            ? { ...t, content: disk.content, originalContent: disk.content }
+                            : t
+                        )
+                      );
+                    } else {
+                      showToast(
+                        `${tab.title} changed on disk (unsaved edits preserved)`,
+                        "info",
+                        3000
+                      );
+                    }
+                  }
+                } catch {}
+              }
             } catch {}
           }, 350);
         })
@@ -1533,6 +1565,7 @@ export const App: React.FC = () => {
               onToggleEditor={() => setEditorOpen((prev) => !prev)}
               onRollbackSnapshot={handleRollbackSnapshot}
               onUndoToMessage={handleUndoToMessage}
+              workspaceTree={tree}
               onChangeMode={(m) => {
                 setMode(m);
                 if (activeSession) window.oro.updateSession(activeSession.id, { mode: m });
@@ -1720,11 +1753,21 @@ export const App: React.FC = () => {
           onOpenSettings={() => setActiveModal("settings")}
           onSelectMode={(m) => setMode(m)}
           onDistill={handleSummarize}
+          onCompact={() => {
+            if (!isStreaming) handleSendMessage("/compact");
+          }}
           onToggleSidebar={() => setSidebarOpen((v) => !v)}
+          onToggleEditor={() => setEditorOpen((v) => !v)}
           onToggleZen={() => setZenMode((z) => (z === "editor" ? "none" : "editor"))}
+          onReindex={handleReindex}
           onOpenExternal={activeTabPath ? () => window.oro.openExternal(activeTabPath) : undefined}
-          onSwitchWorkspace={() => setActiveModal("workspace")}
-          onNewWorkspace={() => setActiveModal("workspace_create")}
+          onSwitchWorkspace={async () => {
+            const selected = await window.oro.selectWorkspaceFolder();
+            if (selected) {
+              await handleSwitchWorkspace(selected);
+              showToast(`Opened ${selected.split(/[\\/]/).pop() || selected}`, "success", 2200);
+            }
+          }}
           currentTheme={currentTheme}
         />
       )}

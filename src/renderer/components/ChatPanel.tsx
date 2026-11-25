@@ -35,10 +35,11 @@ import {
   ArrowDown,
 } from "lucide-react";
 import { marked } from "marked";
-import type { AgentModeId, OroConfig, ProviderId, SessionFileRecord, SessionRecord, ToolCallEvent, SubagentProgressEvent } from "../../types.js";
+import type { AgentModeId, OroConfig, ProviderId, SessionFileRecord, SessionRecord, ToolCallEvent, SubagentProgressEvent, TreeNode } from "../../types.js";
 import { processDroppedFiles, processDroppedDataTransfer, formatFileSize, type DroppedFileInfo } from "../utils/fileDropHelper.js";
 import { ContextMenu } from "./ContextMenu.js";
 import { appPrompt } from "./AppDialog.js";
+import { InlineChatMedia } from "./InlineChatMedia.js";
 
 const PROVIDER_MODELS: Record<
   ProviderId,
@@ -602,6 +603,7 @@ interface ChatPanelProps {
   onToggleEditor?: () => void;
   onRollbackSnapshot?: (snapshotId: string) => Promise<boolean>;
   onUndoToMessage?: (messageId: string) => Promise<string | void>;
+  workspaceTree?: TreeNode[];
 }
 
 export const ChatPanel: React.FC<ChatPanelProps> = React.memo(({
@@ -633,6 +635,7 @@ export const ChatPanel: React.FC<ChatPanelProps> = React.memo(({
   onToggleEditor,
   onRollbackSnapshot,
   onUndoToMessage,
+  workspaceTree,
 }) => {
   const [input, setInput] = useState("");
   const [attachedFiles, setAttachedFiles] = useState<DroppedFileInfo[]>([]);
@@ -729,6 +732,40 @@ export const ChatPanel: React.FC<ChatPanelProps> = React.memo(({
   const [showScrollBottom, setShowScrollBottom] = useState(false);
   const [lightboxImg, setLightboxImg] = useState<{ name: string; src: string } | null>(null);
   const [streamElapsedSec, setStreamElapsedSec] = useState(0);
+  const [mentionIndex, setMentionIndex] = useState(0);
+
+  const flatWorkspaceFiles = React.useMemo(() => {
+    const out: string[] = [];
+    const walk = (nodes?: TreeNode[]) => {
+      if (!nodes) return;
+      for (const n of nodes) {
+        if (!n.isDir) out.push(n.path);
+        if (n.children) walk(n.children);
+      }
+    };
+    walk(workspaceTree);
+    return out;
+  }, [workspaceTree]);
+
+  const mentionMatch = React.useMemo(() => {
+    const m = input.match(/(?:^|\s)@([^\s@]*)$/);
+    if (!m) return null;
+    const query = (m[1] || "").toLowerCase();
+    const matches = flatWorkspaceFiles
+      .filter((p) => !query || p.toLowerCase().includes(query))
+      .slice(0, 8);
+    if (matches.length === 0) return null;
+    return { token: `@${m[1] || ""}`, matches };
+  }, [input, flatWorkspaceFiles]);
+
+  useEffect(() => {
+    setMentionIndex(0);
+  }, [mentionMatch?.token]);
+
+  const insertMention = (relPath: string) => {
+    setInput((prev) => prev.replace(/(^|\s)@[^\s@]*$/, `$1@${relPath} `));
+    window.setTimeout(() => textareaRef.current?.focus(), 0);
+  };
 
   useEffect(() => {
     if (!isStreaming) {
@@ -971,6 +1008,29 @@ export const ChatPanel: React.FC<ChatPanelProps> = React.memo(({
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (mentionMatch && mentionMatch.matches.length > 0) {
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        setMentionIndex((i) => (i + 1) % mentionMatch.matches.length);
+        return;
+      }
+      if (e.key === "ArrowUp") {
+        e.preventDefault();
+        setMentionIndex((i) => (i - 1 + mentionMatch.matches.length) % mentionMatch.matches.length);
+        return;
+      }
+      if (e.key === "Tab" || (e.key === "Enter" && !e.shiftKey)) {
+        e.preventDefault();
+        const picked = mentionMatch.matches[Math.min(mentionIndex, mentionMatch.matches.length - 1)];
+        if (picked) insertMention(picked);
+        return;
+      }
+      if (e.key === "Escape") {
+        e.preventDefault();
+        setInput((prev) => prev.replace(/(^|\s)@[^\s@]*$/, "$1"));
+        return;
+      }
+    }
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
       handleSubmit();
@@ -1587,7 +1647,14 @@ export const ChatPanel: React.FC<ChatPanelProps> = React.memo(({
 
                 {/* Tool calls execution timeline rollup accordion */}
                 {m.toolCalls && m.toolCalls.length > 0 && (
-                  <ToolCallsAccordion toolCalls={m.toolCalls} onOpenFile={onOpenFile} />
+                  <>
+                    <ToolCallsAccordion toolCalls={m.toolCalls} onOpenFile={onOpenFile} />
+                    <InlineChatMedia
+                      toolCalls={m.toolCalls}
+                      onOpenFile={onOpenFile}
+                      onZoomImage={(name, src) => setLightboxImg({ name, src })}
+                    />
+                  </>
                 )}
 
                 {/* Assistant Markdown Stream / Content */}
@@ -1846,10 +1913,32 @@ export const ChatPanel: React.FC<ChatPanelProps> = React.memo(({
             </div>
           )}
 
+          {/* @file Mention Autocomplete Popup */}
+          {mentionMatch && (
+            <div className="mention-popup" role="listbox" aria-label="Mention workspace file">
+              {mentionMatch.matches.map((filePath, idx) => (
+                <button
+                  key={filePath}
+                  type="button"
+                  role="option"
+                  aria-selected={idx === mentionIndex}
+                  className={`mention-item ${idx === mentionIndex ? "active" : ""}`}
+                  onMouseDown={(e) => {
+                    e.preventDefault();
+                    insertMention(filePath);
+                  }}
+                >
+                  <FileText size={11} style={{ color: "var(--cyan)", flexShrink: 0 }} />
+                  <span className="mention-path">{filePath}</span>
+                </button>
+              ))}
+            </div>
+          )}
+
           <textarea
             ref={textareaRef}
             className="prompt-textarea"
-            placeholder="Reply to Oro... (Shift+Enter for new line, drop files to attach)"
+            placeholder="Reply to Oro... (@ to mention files, /compact to condense, Ctrl+V to paste)"
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}

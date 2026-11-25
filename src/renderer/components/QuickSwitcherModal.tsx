@@ -32,8 +32,11 @@ export interface QuickSwitcherProps {
   onOpenSettings?: () => void;
   onSelectMode?: (mode: AgentModeId) => void;
   onDistill?: () => void;
+  onCompact?: () => void;
   onToggleSidebar?: () => void;
+  onToggleEditor?: () => void;
   onToggleZen?: () => void;
+  onReindex?: () => void;
   onOpenExternal?: () => void;
   onSwitchWorkspace?: () => void;
   onNewWorkspace?: () => void;
@@ -77,8 +80,11 @@ export const QuickSwitcherModal: React.FC<QuickSwitcherProps> = ({
   onOpenSettings,
   onSelectMode,
   onDistill,
+  onCompact,
   onToggleSidebar,
+  onToggleEditor,
   onToggleZen,
+  onReindex,
   onOpenExternal,
   onSwitchWorkspace,
   onNewWorkspace,
@@ -114,6 +120,52 @@ export const QuickSwitcherModal: React.FC<QuickSwitcherProps> = ({
         icon: <Plus size={13} style={{ color: "var(--cyan)" }} />,
         action: () => {
           onNewSession();
+          onClose();
+        },
+      });
+    }
+
+    if (onCompact) {
+      list.push({
+        id: "cmd_compact_context",
+        type: "command",
+        category: "Commands",
+        title: "Compact Context (/compact)",
+        subtitle: "Summarize and condense current session history",
+        icon: <Sparkles size={13} style={{ color: "#a855f7" }} />,
+        action: () => {
+          onCompact();
+          onClose();
+        },
+      });
+    }
+
+    if (onToggleEditor) {
+      list.push({
+        id: "cmd_toggle_editor",
+        type: "command",
+        category: "Commands",
+        title: "Toggle Editor Panel",
+        subtitle: "Show or hide the code & markdown editor",
+        shortcut: "Ctrl+E",
+        icon: <Maximize2 size={13} style={{ color: "var(--cyan)" }} />,
+        action: () => {
+          onToggleEditor();
+          onClose();
+        },
+      });
+    }
+
+    if (onReindex) {
+      list.push({
+        id: "cmd_reindex_vault",
+        type: "command",
+        category: "Commands",
+        title: "Reindex Workspace",
+        subtitle: "Refresh files, wiki-links, and FTS5 search index",
+        icon: <Command size={13} style={{ color: "var(--text-muted)" }} />,
+        action: () => {
+          onReindex();
           onClose();
         },
       });
